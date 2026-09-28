@@ -175,7 +175,7 @@ fun VectorBoardComposable(
                             )
                         }
 
-                        rotate(angle, cx, cy) {
+                        rotate(degrees = angle, pivot = center) {
                             // Ground shadow.
                             drawRoundRect(
                                 color = Color.Black.copy(alpha = 0.50f),
