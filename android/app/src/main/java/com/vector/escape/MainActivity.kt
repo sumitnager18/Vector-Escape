@@ -18,6 +18,7 @@ import com.vector.escape.ui.screens.LevelSelectScreen
 import com.vector.escape.ui.screens.MainMenuScreen
 import com.vector.escape.ui.theme.VectorBg
 import com.vector.escape.ui.theme.VectorEscapeTheme
+import kotlin.math.max
 
 enum class Screen {
     MENU,
@@ -90,8 +91,10 @@ class MainActivity : ComponentActivity() {
                                 onNextLevel = {
                                     val nextNum = activeLevel.levelNumber + 1
                                     if (nextNum <= 50) {
+                                        prefs.currentCampaignLevel = max(prefs.currentCampaignLevel, nextNum)
                                         activeLevel = CampaignLevels.getLevel(nextNum)
                                     } else {
+                                        prefs.currentCampaignLevel = 50
                                         currentScreen = Screen.MENU
                                     }
                                 }
