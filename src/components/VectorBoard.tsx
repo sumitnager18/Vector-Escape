@@ -341,73 +341,91 @@ export const VectorBoard: React.FC<VectorBoardProps> = ({
   const renderArrowSvg = (direction: DirectionType, isLegal: boolean, isHint: boolean, isObstruction: boolean) => {
     const angle = Direction.getVector(direction).angleDeg;
 
-    let strokeColor = '#00F0FF';
-    let glowColor = 'rgba(0, 240, 255, 0.4)';
-    let fillColor = 'rgba(0, 240, 255, 0.25)';
+    const strokeColor = isObstruction
+      ? '#EF4444'
+      : isHint
+        ? '#10B981'
+        : isLegal
+          ? '#00F0FF'
+          : '#60A5FA';
 
-    if (isObstruction) {
-      strokeColor = '#EF4444';
-      glowColor = 'rgba(239, 68, 68, 0.5)';
-      fillColor = 'rgba(239, 68, 68, 0.3)';
-    } else if (isHint) {
-      strokeColor = '#10B981';
-      glowColor = 'rgba(16, 185, 129, 0.6)';
-      fillColor = 'rgba(16, 185, 129, 0.35)';
-    } else if (!isLegal) {
-      // Subdued cyan-slate when blocked, so player can still read direction clearly
-      strokeColor = '#60A5FA';
-      glowColor = 'rgba(96, 165, 250, 0.15)';
-      fillColor = 'rgba(96, 165, 250, 0.12)';
-    }
+    const bodyTop = isObstruction ? '#FF6B6B' : isHint ? '#6EE7B7' : isLegal ? '#67E8F9' : '#93C5FD';
+    const bodyBottom = isObstruction ? '#991B1B' : isHint ? '#047857' : isLegal ? '#075985' : '#1D4ED8';
+    const glowColor = isObstruction
+      ? 'rgba(239,68,68,0.55)'
+      : isHint
+        ? 'rgba(16,185,129,0.65)'
+        : isLegal
+          ? 'rgba(0,240,255,0.55)'
+          : 'rgba(96,165,250,0.18)';
 
     return (
       <svg
         viewBox="0 0 44 44"
-        className="w-full h-full p-1.5 transition-transform duration-200"
+        className="w-full h-full p-1 transition-transform duration-200"
         style={{
           transform: `rotate(${angle}deg)`,
-          filter: `drop-shadow(0 0 6px ${glowColor})`
+          filter: `drop-shadow(0 5px 5px rgba(0,0,0,0.55)) drop-shadow(0 0 7px ${glowColor})`
         }}
       >
         <defs>
-          <linearGradient id={`grad_${direction}_${isLegal ? '1' : '0'}`} x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0%" stopColor={strokeColor} stopOpacity="0.4" />
-            <stop offset="100%" stopColor={strokeColor} stopOpacity="1.0" />
+          <linearGradient id={`vectorBody_${direction}_${isLegal ? 'legal' : 'blocked'}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={bodyTop} />
+            <stop offset="55%" stopColor={strokeColor} />
+            <stop offset="100%" stopColor={bodyBottom} />
+          </linearGradient>
+          <linearGradient id="vectorEdge" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.7" />
+            <stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0.35" />
           </linearGradient>
         </defs>
 
-        {/* Back glow disc */}
-        <circle cx="22" cy="22" r="16" fill={fillColor} />
+        <g>
+          {/* Raised base / toy-like vector body */}
+          <rect x="9" y="11" width="26" height="25" rx="8" fill="rgba(0,0,0,0.38)" transform="translate(0 2)" />
+          <rect
+            x="9"
+            y="9"
+            width="26"
+            height="25"
+            rx="8"
+            fill={`url(#vectorBody_${direction}_${isLegal ? 'legal' : 'blocked'})`}
+            stroke={strokeColor}
+            strokeWidth="1.4"
+          />
+          <rect x="10.5" y="10.5" width="23" height="21.5" rx="6.5" fill="url(#vectorEdge)" opacity="0.32" />
 
-        {/* Arrow shaft */}
-        <line
-          x1="22"
-          y1="34"
-          x2="22"
-          y2="14"
-          stroke={`url(#grad_${direction}_${isLegal ? '1' : '0'})`}
-          strokeWidth="3.6"
-          strokeLinecap="round"
-        />
+          {/* Directional arrowhead + shaft */}
+          <path
+            d="M22 5.5 L33 18 H27.3 V29.5 H16.7 V18 H11 Z"
+            fill={`url(#vectorBody_${direction}_${isLegal ? 'legal' : 'blocked'})`}
+            stroke="#E0FBFF"
+            strokeOpacity="0.55"
+            strokeWidth="1.1"
+            strokeLinejoin="round"
+          />
 
-        {/* Dynamic Chevron / Arrowhead */}
-        <path
-          d="M 12 19 L 22 7 L 32 19"
-          fill="none"
-          stroke={strokeColor}
-          strokeWidth="3.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+          {/* Top-face highlight */}
+          <path
+            d="M22 7.5 L30.2 17 H26.2"
+            fill="none"
+            stroke="#FFFFFF"
+            strokeOpacity="0.62"
+            strokeWidth="1.25"
+            strokeLinecap="round"
+          />
 
-        {/* Energy core near base */}
-        <circle
-          cx="22"
-          cy="31"
-          r="2.2"
-          fill={isHint ? '#10B981' : isObstruction ? '#EF4444' : '#00F0FF'}
-          className={isLegal ? 'animate-pulse' : ''}
-        />
+          {/* Energy core */}
+          <circle cx="22" cy="29.5" r="3" fill="#06111E" opacity="0.7" />
+          <circle
+            cx="22"
+            cy="29"
+            r="2"
+            fill={isObstruction ? '#FCA5A5' : isHint ? '#A7F3D0' : '#CFFAFE'}
+            className={isLegal ? 'animate-pulse' : ''}
+          />
+        </g>
       </svg>
     );
   };
@@ -417,7 +435,7 @@ export const VectorBoard: React.FC<VectorBoardProps> = ({
       {/* Precision Puzzle Board Device Frame */}
       <div
         ref={containerRef}
-        className="relative w-full h-full rounded-3xl p-3 bg-gradient-to-b from-[#0E1729] via-[#0A111F] to-[#060A13] border border-cyan-500/20 shadow-[0_12px_40px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.1),0_0_20px_rgba(0,240,255,0.06)] flex flex-col justify-between overflow-hidden"
+        className="relative w-full h-full rounded-3xl p-3 bg-[radial-gradient(circle_at_50%_15%,rgba(0,240,255,0.10),transparent_34%),linear-gradient(145deg,#14233D_0%,#0A1220_48%,#04070D_100%)] border border-cyan-400/25 shadow-[0_12px_40px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.1),0_0_20px_rgba(0,240,255,0.06)] flex flex-col justify-between overflow-hidden"
       >
         {/* Subtle grid atmospheric lines */}
         <div
@@ -462,10 +480,10 @@ export const VectorBoard: React.FC<VectorBoardProps> = ({
               return (
                 <div
                   key={`${r}-${c}`}
-                  className={`relative rounded-xl flex items-center justify-center transition-all duration-200 ${
+                  className={`relative rounded-xl flex items-center justify-center transition-all duration-200 overflow-visible ${
                     isOccupied
-                      ? 'bg-[#121D33] border border-cyan-500/25 shadow-[inset_0_1px_1px_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.5)]'
-                      : 'bg-[#0B1220]/60 border border-slate-800/40 shadow-inner'
+                      ? 'bg-gradient-to-br from-[#1D2D4B] via-[#111D34] to-[#080E1A] border border-cyan-400/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-4px_0_rgba(0,0,0,0.35),0_6px_14px_rgba(0,0,0,0.5)]'
+                      : 'bg-gradient-to-br from-[#101A2C]/80 to-[#070C16]/80 border border-slate-700/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-3px_0_rgba(0,0,0,0.25)]'
                   } ${isInPreviewPath ? (previewTrajectory?.blocked ? 'bg-amber-950/40 border-amber-500/40' : 'bg-cyan-950/40 border-cyan-400/40') : ''} ${
                     isObstructionCell ? 'bg-red-950/40 border-red-500/50' : ''
                   }`}
