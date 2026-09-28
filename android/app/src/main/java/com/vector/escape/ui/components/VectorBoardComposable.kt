@@ -676,6 +676,39 @@ private fun DrawScope.drawDashedLine(
     }
 }
 
+
+private fun DrawScope.drawExitGate(center: Offset, horizontal: Boolean) {
+    val length = 46.dp.toPx()
+    val thickness = 6.dp.toPx()
+    if (horizontal) {
+        drawRoundRect(
+            brush = Brush.horizontalGradient(
+                colors = listOf(
+                    Color(0xFF151C22),
+                    Color(0xFFF4C33A),
+                    Color(0xFF151C22)
+                )
+            ),
+            topLeft = Offset(center.x - length / 2f, center.y - thickness / 2f),
+            size = Size(length, thickness),
+            cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+        )
+    } else {
+        drawRoundRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xFF151C22),
+                    Color(0xFFF4C33A),
+                    Color(0xFF151C22)
+                )
+            ),
+            topLeft = Offset(center.x - thickness / 2f, center.y - length / 2f),
+            size = Size(thickness, length),
+            cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+        )
+    }
+}
+
 private fun darken(color: Color, amount: Float): Color =
     Color(
         red = color.red * (1f - amount),
