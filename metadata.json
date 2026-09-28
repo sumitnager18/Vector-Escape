@@ -1,0 +1,6 @@
+{
+  "name": "Vector Escape",
+  "description": "Minimalist futuristic directional-arrow mobile puzzle game built with clean puzzle engine, guaranteed solvability, 50 campaign levels, daily challenges, and practice mode.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,17 +1,20 @@
-# VECTOR ESCAPE
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+</div>
 
-Original directional-vector puzzle game project.
+# Run and deploy your AI Studio app
 
-## Project
-- Web prototype: React + TypeScript + Vite
-- Android project: Kotlin + Jetpack Compose
-- Core puzzle: directional vectors can exit only when their path to the board edge is clear.
-- Campaign, procedural generation, solver, Daily Vector, Practice mode, persistence, audio and haptics are part of the project design.
+This contains everything you need to run your app locally.
 
-## Source status
-The repository is being initialized from the current Vector Escape project snapshot. The full source snapshot is kept separately so that no generated or machine-specific files are accidentally committed.
+View your app in AI Studio: https://ai.studio/apps/6d302343-4cae-4495-a9ef-9bb7de7c412f
 
-## Important
-- Do not commit Android `local.properties`.
-- Do not commit Gradle caches, build outputs, or secrets.
-- The Android build should be verified in GitHub Actions before treating an APK as release-ready.
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
