@@ -2,6 +2,8 @@ package com.vector.escape.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,7 +19,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vector.escape.audio.SoundManager
 import com.vector.escape.engine.MoveValidator
-import com.vector.escape.engine.PuzzleSolver
 import com.vector.escape.haptics.HapticManager
 import com.vector.escape.model.*
 import com.vector.escape.storage.GamePreferences
@@ -42,213 +43,190 @@ fun GameScreen(
     var isCleared by remember(levelDef) { mutableStateOf(false) }
     var isFailed by remember(levelDef) { mutableStateOf(false) }
 
+    fun resetBoard() {
+        board = BoardState(levelDef.rows, levelDef.cols, levelDef.arrows)
+        hearts = 3
+        moves = 0
+        mistakes = 0
+        flow = 1
+        undoStack = emptyList()
+        activeHintId = null
+        isCleared = false
+        isFailed = false
+    }
+
     fun handleArrowTap(arrow: Arrow) {
         if (isCleared || isFailed) return
 
         if (MoveValidator.isMoveLegal(board, arrow)) {
-            // Legal move
             SoundManager.playLaunch(flow)
             HapticManager.tap(context)
             activeHintId = null
+            undoStack = undoStack + UndoStep(board, flow, arrow)
+            board = board.removeArrow(arrow.id)
+            moves += 1
+            flow += 1
 
-            val nextUndo = undoStack + UndoStep(board, flow, arrow)
-            val nextBoard = board.removeArrow(arrow.id)
-            val nextMoves = moves + 1
-            val nextFlow = flow + 1
-
-            board = nextBoard
-            moves = nextMoves
-            flow = nextFlow
-            undoStack = nextUndo
-
-            if (nextBoard.isCleared) {
+            if (board.isCleared) {
                 isCleared = true
                 SoundManager.playWin()
                 HapticManager.success(context)
-                val stars = GameState.calculateStars(mistakes)
-                prefs.saveLevelStars(levelDef.levelNumber, stars)
+                prefs.saveLevelStars(levelDef.levelNumber, GameState.calculateStars(mistakes))
             }
         } else {
-            // Blocked tap
             SoundManager.playBlocked()
             HapticManager.blocked(context)
             activeHintId = null
             mistakes += 1
             flow = 1
             hearts -= 1
-
-            if (hearts <= 0) {
-                isFailed = true
-            }
+            if (hearts <= 0) isFailed = true
         }
     }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(VectorBg)
-            .padding(16.dp)
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Top HUD
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = VectorTextPrimary)
-                }
-
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "SECTOR \${levelDef.levelNumber}",
-                        fontWeight = FontWeight.Bold,
-                        color = VectorTextPrimary
-                    )
-                    Text(
-                        text = "\${levelDef.difficulty}",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = VectorCyan
-                    )
-                }
-
-                // Hearts
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (i in 0 until 3) {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = null,
-                            tint = if (i < hearts) VectorRed else Color(0x33EF4444),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = VectorTextPrimary)
             }
 
-            // Stats row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(VectorSurface, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(text = "REMAINING: \${board.remainingCount}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = VectorCyan)
-                Text(text = "MOVES: \$moves", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = VectorTextSecondary)
-                Text(text = "FLOW x\$flow", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = VectorViolet)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "SECTOR ${levelDef.levelNumber}",
+                    fontWeight = FontWeight.Bold,
+                    color = VectorTextPrimary
+                )
+                Text(
+                    text = levelDef.title.uppercase(),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    color = VectorCyan,
+                    maxLines = 1
+                )
             }
 
-            // Gameboard
-            VectorBoardComposable(
-                board = board,
-                onArrowTapped = { handleArrowTap(it) },
-                activeHintArrowId = activeHintId
-            )
-
-            // Controls
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        if (undoStack.isNotEmpty()) {
-                            val last = undoStack.last()
-                            board = last.board
-                            flow = last.flow
-                            moves = (moves - 1).coerceAtLeast(0)
-                            undoStack = undoStack.dropLast(1)
-                            SoundManager.playTap()
-                        }
-                    },
-                    enabled = undoStack.isNotEmpty(),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("UNDO")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (i in 0 until 3) {
+                    Icon(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = null,
+                        tint = if (i < hearts) VectorRed else Color(0x33EF4444),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
+            }
+        }
 
-                OutlinedButton(
-                    onClick = {
-                        val legal = MoveValidator.getLegalMoves(board)
-                        if (legal.isNotEmpty()) {
-                            activeHintId = legal.first().id
-                            SoundManager.playTap()
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("HINT")
-                }
+        Spacer(modifier = Modifier.height(6.dp))
 
-                OutlinedButton(
-                    onClick = {
-                        board = BoardState(levelDef.rows, levelDef.cols, levelDef.arrows)
-                        hearts = 3
-                        moves = 0
-                        mistakes = 0
-                        flow = 1
-                        undoStack = emptyList()
-                        isCleared = false
-                        isFailed = false
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(VectorSurface, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("LEFT ${board.remainingCount}", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = VectorCyan)
+            Text("MOVES $moves", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = VectorTextSecondary)
+            Text("FLOW x$flow", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = VectorViolet)
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        VectorBoardComposable(
+            board = board,
+            onArrowTapped = ::handleArrowTap,
+            activeHintArrowId = activeHintId,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    if (undoStack.isNotEmpty()) {
+                        val last = undoStack.last()
+                        board = last.board
+                        flow = last.flow
+                        moves = (moves - 1).coerceAtLeast(0)
+                        undoStack = undoStack.dropLast(1)
+                        activeHintId = null
                         SoundManager.playTap()
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("RESET")
-                }
-            }
-        }
-
-        // Completion Dialog
-        if (isCleared) {
-            AlertDialog(
-                onDismissRequest = {},
-                title = { Text("LEVEL CLEARED") },
-                text = { Text("Sector \${levelDef.levelNumber} cleared in \$moves moves.") },
-                confirmButton = {
-                    Button(onClick = onNextLevel) {
-                        Text("NEXT SECTOR")
                     }
                 },
-                dismissButton = {
-                    TextButton(onClick = onBack) {
-                        Text("MENU")
+                enabled = undoStack.isNotEmpty(),
+                modifier = Modifier.weight(1f).height(48.dp)
+            ) { Text("UNDO") }
+
+            OutlinedButton(
+                onClick = {
+                    val legal = MoveValidator.getLegalMoves(board)
+                    if (legal.isNotEmpty()) {
+                        activeHintId = legal.first().id
+                        SoundManager.playTap()
                     }
-                }
+                },
+                enabled = board.remainingCount > 0,
+                modifier = Modifier.weight(1f).height(48.dp)
+            ) { Text("HINT") }
+
+            OutlinedButton(
+                onClick = { resetBoard(); SoundManager.playTap() },
+                modifier = Modifier.weight(1f).height(48.dp)
+            ) { Text("RESET") }
+        }
+
+        if (levelDef.tutorialTip != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = levelDef.tutorialTip,
+                color = VectorTextSecondary,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
-        // Failure Dialog
-        if (isFailed) {
-            AlertDialog(
-                onDismissRequest = {},
-                title = { Text("LEVEL FAILED") },
-                text = { Text("All hearts depleted in sector \${levelDef.levelNumber}.") },
-                confirmButton = {
-                    Button(onClick = {
-                        board = BoardState(levelDef.rows, levelDef.cols, levelDef.arrows)
-                        hearts = 3
-                        moves = 0
-                        mistakes = 0
-                        flow = 1
-                        undoStack = emptyList()
-                        isFailed = false
-                    }) {
-                        Text("TRY AGAIN")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = onBack) {
-                        Text("LEVEL SELECT")
-                    }
+        Spacer(modifier = Modifier.height(12.dp))
+    }
+
+    if (isCleared) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("SECTOR ${levelDef.levelNumber} CLEARED") },
+            text = { Text("Cleared in $moves moves with $mistakes mistakes.") },
+            confirmButton = {
+                Button(onClick = onNextLevel) {
+                    Text(if (levelDef.levelNumber < 50) "NEXT SECTOR" else "CAMPAIGN COMPLETE")
                 }
-            )
-        }
+            },
+            dismissButton = { TextButton(onClick = onBack) { Text("MENU") } }
+        )
+    }
+
+    if (isFailed) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("SECTOR ${levelDef.levelNumber} FAILED") },
+            text = { Text("All three hearts were used. Try the route again.") },
+            confirmButton = { Button(onClick = ::resetBoard) { Text("TRY AGAIN") } },
+            dismissButton = { TextButton(onClick = onBack) { Text("LEVEL SELECT") } }
+        )
     }
 }
