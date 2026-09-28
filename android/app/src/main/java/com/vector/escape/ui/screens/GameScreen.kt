@@ -27,6 +27,16 @@ import com.vector.escape.storage.GamePreferences
 import com.vector.escape.ui.components.VectorBoardComposable
 import com.vector.escape.ui.theme.*
 
+private fun exitDurationMillis(arrow: Arrow, rows: Int, cols: Int): Int {
+    val cellsToEdge = when (arrow.direction) {
+        Direction.LEFT -> arrow.col + 1.25f
+        Direction.RIGHT -> (cols - arrow.col - 1) + 1.25f
+        Direction.UP -> arrow.row + 1.25f
+        Direction.DOWN -> (rows - arrow.row - 1) + 1.25f
+    }
+    return (360f + cellsToEdge * 105f).toInt().coerceIn(430, 1150)
+}
+
 @Composable
 fun GameScreen(
     levelDef: LevelDefinition,
@@ -66,7 +76,7 @@ fun GameScreen(
         exitProgress.animateTo(
             1f,
             animationSpec = tween(
-                durationMillis = (520 + (levelDef.rows + levelDef.cols) * 35).coerceAtMost(820),
+                durationMillis = exitDurationMillis(arrow, levelDef.rows, levelDef.cols),
                 easing = FastOutSlowInEasing
             )
         )
