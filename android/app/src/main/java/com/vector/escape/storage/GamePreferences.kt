@@ -2,6 +2,7 @@ package com.vector.escape.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlin.math.max
 
 class GamePreferences(context: Context) {
     private val prefs: SharedPreferences =
@@ -39,7 +40,7 @@ class GamePreferences(context: Context) {
         if (levelNumber >= unlockedLevel && levelNumber < 50) {
             unlockedLevel = levelNumber + 1
         }
-        currentCampaignLevel = (levelNumber + 1).coerceAtMost(50)
+        currentCampaignLevel = maxOf(currentCampaignLevel, (levelNumber + 1).coerceAtMost(50))
     }
 
     fun getTotalStars(): Int {
