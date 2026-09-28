@@ -1,5 +1,8 @@
 package com.vector.escape.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,8 +42,10 @@ fun GameScreen(
     var flow by remember(levelDef) { mutableStateOf(1) }
     var undoStack by remember(levelDef) { mutableStateOf(listOf<UndoStep>()) }
     var activeHintId by remember(levelDef) { mutableStateOf<String?>(null) }
+    var movingArrow by remember(levelDef) { mutableStateOf<Arrow?>(null) }
     var isCleared by remember(levelDef) { mutableStateOf(false) }
     var isFailed by remember(levelDef) { mutableStateOf(false) }
+    val exitProgress = remember { Animatable(0f) }
 
     fun resetBoard() {
         board = BoardState(levelDef.rows, levelDef.cols, levelDef.arrows)
@@ -51,28 +55,44 @@ fun GameScreen(
         flow = 1
         undoStack = emptyList()
         activeHintId = null
+        movingArrow = null
         isCleared = false
         isFailed = false
     }
 
+    LaunchedEffect(movingArrow?.id) {
+        val arrow = movingArrow ?: return@LaunchedEffect
+        exitProgress.snapTo(0f)
+        exitProgress.animateTo(
+            1f,
+            animationSpec = tween(
+                durationMillis = (520 + (levelDef.rows + levelDef.cols) * 35).coerceAtMost(820),
+                easing = FastOutSlowInEasing
+            )
+        )
+        board = board.removeArrow(arrow.id)
+        movingArrow = null
+        exitProgress.snapTo(0f)
+
+        if (board.isCleared) {
+            isCleared = true
+            SoundManager.playWin()
+            HapticManager.success(context)
+            prefs.saveLevelStars(levelDef.levelNumber, GameState.calculateStars(mistakes))
+        }
+    }
+
     fun handleArrowTap(arrow: Arrow) {
-        if (isCleared || isFailed) return
+        if (isCleared || isFailed || movingArrow != null) return
 
         if (MoveValidator.isMoveLegal(board, arrow)) {
             SoundManager.playLaunch(flow)
             HapticManager.tap(context)
             activeHintId = null
             undoStack = undoStack + UndoStep(board, flow, arrow)
-            board = board.removeArrow(arrow.id)
             moves += 1
             flow += 1
-
-            if (board.isCleared) {
-                isCleared = true
-                SoundManager.playWin()
-                HapticManager.success(context)
-                prefs.saveLevelStars(levelDef.levelNumber, GameState.calculateStars(mistakes))
-            }
+            movingArrow = arrow
         } else {
             SoundManager.playBlocked()
             HapticManager.blocked(context)
@@ -98,19 +118,19 @@ fun GameScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = onBack, enabled = movingArrow == null) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = VectorTextPrimary)
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "SECTOR ${levelDef.levelNumber}",
+                    text = "SECTOR \${levelDef.levelNumber}",
                     fontWeight = FontWeight.Bold,
-                    color = VectorTextPrimary
+                    color = VectorTextPrimary,
+                    fontSize = 22.sp
                 )
                 Text(
                     text = levelDef.title.uppercase(),
-                    fontFamily = FontFamily.Monospace,
                     fontSize = 9.sp,
                     color = VectorCyan,
                     maxLines = 1
@@ -134,13 +154,13 @@ fun GameScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(VectorSurface, RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 9.dp),
+                .background(VectorSurface, RoundedCornerShape(16.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("LEFT ${board.remainingCount}", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = VectorCyan)
-            Text("MOVES $moves", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = VectorTextSecondary)
-            Text("FLOW x$flow", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = VectorViolet)
+            Text("LEFT \${board.remainingCount}", fontSize = 12.sp, color = VectorCyan)
+            Text("MOVES $moves", fontSize = 12.sp, color = VectorTextSecondary)
+            Text("FLOW x$flow", fontSize = 12.sp, color = VectorViolet)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -149,7 +169,12 @@ fun GameScreen(
             board = board,
             onArrowTapped = ::handleArrowTap,
             activeHintArrowId = activeHintId,
-            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+            exitingArrowId = movingArrow?.id,
+            exitProgress = exitProgress.value,
+            interactionEnabled = movingArrow == null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -160,7 +185,7 @@ fun GameScreen(
         ) {
             OutlinedButton(
                 onClick = {
-                    if (undoStack.isNotEmpty()) {
+                    if (undoStack.isNotEmpty() && movingArrow == null) {
                         val last = undoStack.last()
                         board = last.board
                         flow = last.flow
@@ -170,24 +195,25 @@ fun GameScreen(
                         SoundManager.playTap()
                     }
                 },
-                enabled = undoStack.isNotEmpty(),
+                enabled = undoStack.isNotEmpty() && movingArrow == null,
                 modifier = Modifier.weight(1f).height(48.dp)
             ) { Text("UNDO") }
 
             OutlinedButton(
                 onClick = {
                     val legal = MoveValidator.getLegalMoves(board)
-                    if (legal.isNotEmpty()) {
+                    if (legal.isNotEmpty() && movingArrow == null) {
                         activeHintId = legal.first().id
                         SoundManager.playTap()
                     }
                 },
-                enabled = board.remainingCount > 0,
+                enabled = board.remainingCount > 0 && movingArrow == null,
                 modifier = Modifier.weight(1f).height(48.dp)
             ) { Text("HINT") }
 
             OutlinedButton(
-                onClick = { resetBoard(); SoundManager.playTap() },
+                onClick = { if (movingArrow == null) { resetBoard(); SoundManager.playTap() } },
+                enabled = movingArrow == null,
                 modifier = Modifier.weight(1f).height(48.dp)
             ) { Text("RESET") }
         }
@@ -198,7 +224,6 @@ fun GameScreen(
                 text = levelDef.tutorialTip,
                 color = VectorTextSecondary,
                 fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -209,7 +234,7 @@ fun GameScreen(
     if (isCleared) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("SECTOR ${levelDef.levelNumber} CLEARED") },
+            title = { Text("SECTOR \${levelDef.levelNumber} CLEARED") },
             text = { Text("Cleared in $moves moves with $mistakes mistakes.") },
             confirmButton = {
                 Button(onClick = onNextLevel) {
@@ -223,7 +248,7 @@ fun GameScreen(
     if (isFailed) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("SECTOR ${levelDef.levelNumber} FAILED") },
+            title = { Text("SECTOR \${levelDef.levelNumber} FAILED") },
             text = { Text("All three hearts were used. Try the route again.") },
             confirmButton = { Button(onClick = ::resetBoard) { Text("TRY AGAIN") } },
             dismissButton = { TextButton(onClick = onBack) { Text("LEVEL SELECT") } }
