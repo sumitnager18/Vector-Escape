@@ -1,6 +1,11 @@
 package com.vector.escape.ui.components
 
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,8 +13,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.*
-import androidx.compose.ui.graphics.*
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
@@ -17,6 +29,21 @@ import androidx.compose.ui.unit.dp
 import com.vector.escape.engine.MoveValidator
 import com.vector.escape.model.Arrow
 import com.vector.escape.model.BoardState
+import com.vector.escape.model.Direction
+import kotlin.math.max
+import kotlin.math.min
+
+private enum class VehicleType {
+    HATCHBACK, SEDAN, SUV, TAXI, PICKUP, BUS
+}
+
+private data class VehicleStyle(
+    val type: VehicleType,
+    val width: Float,
+    val length: Float,
+    val body: Color,
+    val roof: Color
+)
 
 @Composable
 fun VectorBoardComposable(
@@ -28,13 +55,16 @@ fun VectorBoardComposable(
     interactionEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val legalMoves = remember(board) { MoveValidator.getLegalMoves(board).map { it.id }.toSet() }
-    val transition = rememberInfiniteTransition(label = "world_lights")
+    val legalMoves = remember(board) {
+        MoveValidator.getLegalMoves(board).map { it.id }.toSet()
+    }
+    val transition = rememberInfiniteTransition(label = "road_lights")
     val pulse by transition.animateFloat(
-        0.72f, 1f,
-        infiniteRepeatable(
-            tween(900, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse
+        initialValue = 0.65f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
         ),
         label = "legal_pulse"
     )
@@ -55,450 +85,603 @@ fun VectorBoardComposable(
     ) {
         val cellW = size.width / board.cols
         val cellH = size.height / board.rows
-        val margin = 7.dp.toPx()
-        val radius = 16.dp.toPx()
+        val edge = 7.dp.toPx()
+        val road = Size(size.width - edge * 2f, size.height - edge * 2f)
 
-        // A complete toy-like parking/road world rather than isolated tiles.
+        // One continuous asphalt surface. No fake raised blocks.
         drawRoundRect(
             brush = Brush.linearGradient(
-                listOf(
-                    Color(0xFF8B949E),
-                    Color(0xFF68727D),
-                    Color(0xFF3E4853)
+                colors = listOf(
+                    Color(0xFF56616B),
+                    Color(0xFF343E47),
+                    Color(0xFF252E36)
                 ),
                 start = Offset.Zero,
                 end = Offset(size.width, size.height)
             ),
-            topLeft = Offset.Zero,
-            size = size,
-            cornerRadius = CornerRadius(28.dp.toPx(), 28.dp.toPx())
+            topLeft = Offset(edge, edge),
+            size = road,
+            cornerRadius = CornerRadius(26.dp.toPx(), 26.dp.toPx())
         )
 
-        // Raised curb / road island.
+        // Asphalt depth and curb.
         drawRoundRect(
-            color = Color(0xFF1D242C),
-            topLeft = Offset(6.dp.toPx(), 6.dp.toPx()),
-            size = Size(size.width - 12.dp.toPx(), size.height - 12.dp.toPx()),
-            cornerRadius = CornerRadius(24.dp.toPx(), 24.dp.toPx())
+            color = Color(0xFF10171D).copy(alpha = 0.60f),
+            topLeft = Offset(edge + 3.dp.toPx(), edge + 7.dp.toPx()),
+            size = Size(road.width - 6.dp.toPx(), road.height - 4.dp.toPx()),
+            cornerRadius = CornerRadius(25.dp.toPx(), 25.dp.toPx())
         )
         drawRoundRect(
-            brush = Brush.linearGradient(
-                listOf(Color(0xFFF6C33A), Color(0xFF121820), Color(0xFFF6C33A)),
-                start = Offset.Zero,
-                end = Offset(size.width, size.height)
-            ),
-            topLeft = Offset(8.dp.toPx(), 8.dp.toPx()),
-            size = Size(size.width - 16.dp.toPx(), size.height - 16.dp.toPx()),
-            cornerRadius = CornerRadius(22.dp.toPx(), 22.dp.toPx()),
-            style = Stroke(4.dp.toPx())
+            color = Color(0xFF6E7A84),
+            topLeft = Offset(edge, edge),
+            size = road,
+            cornerRadius = CornerRadius(26.dp.toPx(), 26.dp.toPx()),
+            style = Stroke(2.5.dp.toPx())
         )
 
-        // Parking bays and road lanes.
-        for (r in 0 until board.rows) {
-            for (c in 0 until board.cols) {
-                val x = c * cellW + margin
-                val y = r * cellH + margin
-                val w = cellW - margin * 2
-                val h = cellH - margin * 2
+        // Yellow/black roadside curb. This is a road edge, not a puzzle block.
+        drawCurb(Offset(edge + 3.dp.toPx(), edge + 3.dp.toPx()), road)
 
-                drawRoundRect(
-                    color = Color.Black.copy(alpha = 0.28f),
-                    topLeft = Offset(x + 2.dp.toPx(), y + 5.dp.toPx()),
-                    size = Size(w, h),
-                    cornerRadius = CornerRadius(radius, radius)
-                )
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFF465563), Color(0xFF293642), Color(0xFF1B252F)),
-                        start = Offset(x, y),
-                        end = Offset(x + w, y + h)
-                    ),
-                    topLeft = Offset(x, y),
-                    size = Size(w, h),
-                    cornerRadius = CornerRadius(radius, radius)
-                )
-
-                // White parking-space markings.
-                drawLine(
-                    color = Color.White.copy(alpha = 0.23f),
-                    start = Offset(x + w * 0.10f, y + h * 0.82f),
-                    end = Offset(x + w * 0.90f, y + h * 0.82f),
-                    strokeWidth = 1.5.dp.toPx()
-                )
-                drawLine(
-                    color = Color.White.copy(alpha = 0.13f),
-                    start = Offset(x + w * 0.50f, y + h * 0.08f),
-                    end = Offset(x + w * 0.50f, y + h * 0.82f),
-                    strokeWidth = 1.dp.toPx()
-                )
-
-                // Functional-looking lane guides: each vehicle is visually aligned
-                // to a clear escape corridor.
-                drawLine(
-                    color = Color(0xFFB8C2CC).copy(alpha = 0.08f),
-                    start = Offset(x + w * 0.08f, y + h * 0.50f),
-                    end = Offset(x + w * 0.92f, y + h * 0.50f),
-                    strokeWidth = 1.dp.toPx()
-                )
-
-                // Roadside objects are integrated into the parking world.
-                if (arrowAt(board, r, c) == null) {
-                    val pattern = (r * 19 + c * 31 + board.rows * 7) % 9
-                    when (pattern) {
-                        0 -> drawParkingBlock(Offset(x + w * 0.16f, y + h * 0.17f), w * 0.66f, h * 0.10f)
-                        3 -> drawCone(Offset(x + w * 0.77f, y + h * 0.68f), minOf(w, h) * 0.11f)
-                        6 -> drawBollard(Offset(x + w * 0.23f, y + h * 0.65f), minOf(w, h) * 0.09f)
-                    }
-                }
-
-                val arrow = arrowAt(board, r, c)
-                if (arrow != null) {
-                    val legal = legalMoves.contains(arrow.id)
-                    val hint = arrow.id == activeHintArrowId
-                    val isExiting = arrow.id == exitingArrowId
-
-                    val vehicleCenter = Offset(
-                        x + w / 2f + if (isExiting) exitDx(arrow, cellW, cellH, exitProgress) else 0f,
-                        y + h / 2f + if (isExiting) exitDy(arrow, cellW, cellH, exitProgress) else 0f
-                    )
-
-                    val vehicleColor = vehiclePalette(arrow.id)
-                    if (legal && !isExiting) {
-                        drawCircle(
-                            color = vehicleColor.copy(alpha = 0.15f * pulse),
-                            radius = minOf(w, h) * 0.49f,
-                            center = vehicleCenter
-                        )
-                    }
-
-                    if (isExiting) {
-                        drawExitTrail(
-                            center = vehicleCenter,
-                            direction = arrow.direction,
-                            length = minOf(w, h) * (0.85f + exitProgress * 1.4f),
-                            alpha = 0.32f * (1f - exitProgress * 0.35f)
-                        )
-                    }
-
-                    rotate(
-                        degrees = arrow.direction.angleDeg,
-                        pivot = vehicleCenter
-                    ) {
-                        drawToyVehicle(
-                            center = vehicleCenter,
-                            cellW = w,
-                            cellH = h,
-                            color = vehicleColor,
-                            bus = isBus(arrow),
-                            pulse = if (legal || hint) pulse else 1f,
-                            exitProgress = if (isExiting) exitProgress else 0f
-                        )
-                    }
-
-                    val borderColor = when {
-                        hint -> Color(0xFF42F5B3)
-                        legal -> Color(0xFF00E5FF).copy(alpha = 0.78f)
-                        else -> Color.White.copy(alpha = 0.12f)
-                    }
-                    drawRoundRect(
-                        color = borderColor,
-                        topLeft = Offset(x, y),
-                        size = Size(w, h),
-                        cornerRadius = CornerRadius(radius, radius),
-                        style = Stroke(if (hint) 2.5.dp.toPx() else 1.dp.toPx())
-                    )
-                }
-            }
+        // Real road markings: broad lanes plus subtle parking/grid guides.
+        for (r in 1 until board.rows) {
+            val y = r * cellH
+            drawLine(
+                color = Color.White.copy(alpha = 0.10f),
+                start = Offset(edge + 12.dp.toPx(), y),
+                end = Offset(size.width - edge - 12.dp.toPx(), y),
+                strokeWidth = 1.5.dp.toPx()
+            )
+            drawDashedLine(
+                color = Color(0xFFE9EEF2).copy(alpha = 0.12f),
+                start = Offset(edge + 18.dp.toPx(), y),
+                end = Offset(size.width - edge - 18.dp.toPx(), y),
+                dash = 12.dp.toPx(),
+                gap = 18.dp.toPx(),
+                strokeWidth = 1.dp.toPx()
+            )
+        }
+        for (c in 1 until board.cols) {
+            val x = c * cellW
+            drawLine(
+                color = Color.White.copy(alpha = 0.055f),
+                start = Offset(x, edge + 12.dp.toPx()),
+                end = Offset(x, size.height - edge - 12.dp.toPx()),
+                strokeWidth = 1.2.dp.toPx()
+            )
         }
 
-        // Exit gates make the destination visually obvious.
-        drawExitGate(Offset(size.width / 2f, 2.dp.toPx()), horizontal = true)
-        drawExitGate(Offset(size.width / 2f, size.height - 2.dp.toPx()), horizontal = true)
-        drawExitGate(Offset(2.dp.toPx(), size.height / 2f), horizontal = false)
-        drawExitGate(Offset(size.width - 2.dp.toPx(), size.height / 2f), horizontal = false)
+        // Functional escape-lane visualization. It shows the actual route
+        // the selected vehicle can use, instead of decorative obstacles.
+        for (arrow in board.arrows) {
+            val legal = legalMoves.contains(arrow.id)
+            val isExiting = arrow.id == exitingArrowId
+            val center = cellCenter(arrow, cellW, cellH)
+            val laneColor = when {
+                isExiting -> Color(0xFF69F7FF)
+                legal -> Color(0xFF49E89A)
+                else -> Color(0xFFEF5350)
+            }
+            val alpha = if (legal || isExiting) 0.20f else 0.065f
+            drawEscapeLane(
+                center = center,
+                direction = arrow.direction,
+                boardWidth = size.width,
+                boardHeight = size.height,
+                color = laneColor.copy(alpha = alpha),
+                strokeWidth = if (legal || isExiting) 3.dp.toPx() else 1.dp.toPx()
+            )
+        }
 
-        // Soft highlight across the world gives it a toy-rendered finish.
-        drawRoundRect(
-            color = Color.White.copy(alpha = 0.055f),
-            topLeft = Offset(12.dp.toPx(), 12.dp.toPx()),
-            size = Size(size.width - 24.dp.toPx(), size.height * 0.20f),
-            cornerRadius = CornerRadius(20.dp.toPx(), 20.dp.toPx())
-        )
+        // Vehicles are the puzzle pieces. Their silhouettes, proportions and
+        // details deliberately vary so the board reads as a traffic scene.
+        for (arrow in board.arrows) {
+            val r = arrow.row
+            val c = arrow.col
+            val x = c * cellW
+            val y = r * cellH
+            val legal = legalMoves.contains(arrow.id)
+            val hint = arrow.id == activeHintArrowId
+            val isExiting = arrow.id == exitingArrowId
+            val style = vehicleStyle(arrow.id)
+
+            val baseCenter = Offset(x + cellW / 2f, y + cellH / 2f)
+            val center = if (isExiting) {
+                baseCenter + exitOffset(
+                    arrow = arrow,
+                    board = board,
+                    cellW = cellW,
+                    cellH = cellH,
+                    progress = exitProgress
+                )
+            } else {
+                baseCenter
+            }
+
+            if (legal && !isExiting) {
+                drawCircle(
+                    color = Color(0xFF50F5B4).copy(alpha = 0.11f * pulse),
+                    radius = min(cellW, cellH) * 0.44f,
+                    center = center
+                )
+            }
+            if (hint && !isExiting) {
+                drawRoundRect(
+                    color = Color(0xFF42F5B3).copy(alpha = 0.14f),
+                    topLeft = Offset(x + 4.dp.toPx(), y + 4.dp.toPx()),
+                    size = Size(cellW - 8.dp.toPx(), cellH - 8.dp.toPx()),
+                    cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx())
+                )
+            }
+
+            if (isExiting) {
+                drawExitTrail(
+                    center = center,
+                    direction = arrow.direction,
+                    progress = exitProgress,
+                    cellW = cellW,
+                    cellH = cellH
+                )
+            }
+
+            rotate(degrees = arrow.direction.angleDeg, pivot = center) {
+                drawRealVehicle(
+                    center = center,
+                    cellW = cellW,
+                    cellH = cellH,
+                    style = style,
+                    pulse = if (legal || hint) pulse else 1f,
+                    exitProgress = if (isExiting) exitProgress else 0f
+                )
+            }
+
+            val border = when {
+                hint -> Color(0xFF42F5B3)
+                legal -> Color(0xFF23DDF7).copy(alpha = 0.82f)
+                else -> Color.White.copy(alpha = 0.07f)
+            }
+            drawRoundRect(
+                color = border,
+                topLeft = Offset(x + 3.dp.toPx(), y + 3.dp.toPx()),
+                size = Size(cellW - 6.dp.toPx(), cellH - 6.dp.toPx()),
+                cornerRadius = CornerRadius(16.dp.toPx(), 16.dp.toPx()),
+                style = Stroke(if (hint) 2.5.dp.toPx() else 1.dp.toPx())
+            )
+        }
+
+        // Directional exits are part of the gameplay presentation.
+        drawExitGate(Offset(size.width / 2f, edge + 1.dp.toPx()), true)
+        drawExitGate(Offset(size.width / 2f, size.height - edge - 1.dp.toPx()), true)
+        drawExitGate(Offset(edge + 1.dp.toPx(), size.height / 2f), false)
+        drawExitGate(Offset(size.width - edge - 1.dp.toPx(), size.height / 2f), false)
+
+        // Small asphalt highlights keep the road from looking like a flat grid.
+        for (i in 0 until 16) {
+            val px = 22.dp.toPx() + ((i * 73) % max(1, size.width.toInt() - 44.dp.toPx().toInt()))
+            val py = 18.dp.toPx() + ((i * 113) % max(1, size.height.toInt() - 36.dp.toPx().toInt()))
+            drawCircle(
+                color = Color.White.copy(alpha = 0.018f),
+                radius = 1.2.dp.toPx(),
+                center = Offset(px, py)
+            )
+        }
     }
 }
 
-private fun arrowAt(board: BoardState, r: Int, c: Int): Arrow? = board.getArrowAt(r, c)
+private fun cellCenter(arrow: Arrow, cellW: Float, cellH: Float): Offset =
+    Offset((arrow.col + 0.5f) * cellW, (arrow.row + 0.5f) * cellH)
 
-private fun isBus(arrow: Arrow): Boolean {
-    return (arrow.id.hashCode().ushr(2) % 5) == 0
-}
-
-private fun vehiclePalette(id: String): Color {
-    return when (id.hashCode().ushr(1) % 6) {
-        0 -> Color(0xFF23D5FF)
-        1 -> Color(0xFFFF4F64)
-        2 -> Color(0xFFFFB62E)
-        3 -> Color(0xFF9B5CFF)
-        4 -> Color(0xFF41E35A)
-        else -> Color(0xFFFF6BC5)
-    }
-}
-
-private fun exitDx(arrow: Arrow, cellW: Float, cellH: Float, p: Float): Float {
+private fun exitOffset(
+    arrow: Arrow,
+    board: BoardState,
+    cellW: Float,
+    cellH: Float,
+    progress: Float
+): Offset {
+    val extra = 1.25f
     return when (arrow.direction) {
-        com.vector.escape.model.Direction.LEFT -> -cellW * (0.55f + p * 1.35f)
-        com.vector.escape.model.Direction.RIGHT -> cellW * (0.55f + p * 1.35f)
-        else -> 0f
+        Direction.LEFT -> Offset(-(arrow.col + extra) * cellW * progress, 0f)
+        Direction.RIGHT -> Offset((board.cols - arrow.col - 1 + extra) * cellW * progress, 0f)
+        Direction.UP -> Offset(0f, -(arrow.row + extra) * cellH * progress)
+        Direction.DOWN -> Offset(0f, (board.rows - arrow.row - 1 + extra) * cellH * progress)
     }
 }
 
-private fun exitDy(arrow: Arrow, cellW: Float, cellH: Float, p: Float): Float {
-    return when (arrow.direction) {
-        com.vector.escape.model.Direction.UP -> -cellH * (0.55f + p * 1.35f)
-        com.vector.escape.model.Direction.DOWN -> cellH * (0.55f + p * 1.35f)
-        else -> 0f
+private fun vehicleStyle(id: String): VehicleStyle {
+    val h = id.hashCode().ushr(1)
+    val body = when (h % 8) {
+        0 -> Color(0xFF18BFEA)
+        1 -> Color(0xFFE83E55)
+        2 -> Color(0xFFFFB52B)
+        3 -> Color(0xFF7C4DFF)
+        4 -> Color(0xFF2CCB62)
+        5 -> Color(0xFFFF6B8A)
+        6 -> Color(0xFF36A6FF)
+        else -> Color(0xFFF3F4F6)
     }
+    val type = when (h % 6) {
+        0 -> VehicleType.HATCHBACK
+        1 -> VehicleType.SEDAN
+        2 -> VehicleType.SUV
+        3 -> VehicleType.TAXI
+        4 -> VehicleType.PICKUP
+        else -> VehicleType.BUS
+    }
+    val (w, l) = when (type) {
+        VehicleType.HATCHBACK -> 0.54f to 0.70f
+        VehicleType.SEDAN -> 0.58f to 0.78f
+        VehicleType.SUV -> 0.64f to 0.83f
+        VehicleType.TAXI -> 0.57f to 0.77f
+        VehicleType.PICKUP -> 0.63f to 0.84f
+        VehicleType.BUS -> 0.70f to 0.92f
+    }
+    val roof = when (type) {
+        VehicleType.TAXI -> Color(0xFF111820)
+        VehicleType.BUS -> Color(0xFF17303A)
+        else -> Color(0xFF101820)
+    }
+    return VehicleStyle(type, w, l, body, roof)
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawToyVehicle(
+private fun DrawScope.drawRealVehicle(
     center: Offset,
     cellW: Float,
     cellH: Float,
-    color: Color,
-    bus: Boolean,
+    style: VehicleStyle,
     pulse: Float,
     exitProgress: Float
 ) {
-    val bodyW = cellW * if (bus) 0.60f else 0.57f
-    val bodyH = cellH * if (bus) 0.88f else 0.78f
-    val left = center.x - bodyW / 2f
-    val top = center.y - bodyH / 2f
-    val r = bodyW * 0.15f
-    val fade = 1f - exitProgress * 0.18f
+    val maxW = cellW * style.width
+    val maxH = cellH * style.length
+    val left = center.x - maxW / 2f
+    val top = center.y - maxH / 2f
+    val radius = min(maxW, maxH) * 0.13f
+    val fade = 1f - exitProgress * 0.16f
 
-    // Ground shadow.
+    // Soft contact shadow.
     drawRoundRect(
         color = Color.Black.copy(alpha = 0.48f * fade),
-        topLeft = Offset(left + 5.dp.toPx(), top + 8.dp.toPx()),
-        size = Size(bodyW, bodyH),
-        cornerRadius = CornerRadius(r, r)
+        topLeft = Offset(left + 4.dp.toPx(), top + 7.dp.toPx()),
+        size = Size(maxW, maxH),
+        cornerRadius = CornerRadius(radius, radius)
     )
 
-    // Lower chassis / 3D extrusion.
+    // Lower chassis makes the vehicle sit on the road.
     drawRoundRect(
-        color = Color(0xFF10161D).copy(alpha = 0.92f),
-        topLeft = Offset(left - 1.dp.toPx(), top + 6.dp.toPx()),
-        size = Size(bodyW + 2.dp.toPx(), bodyH),
-        cornerRadius = CornerRadius(r, r)
+        color = Color(0xFF11171C).copy(alpha = 0.96f),
+        topLeft = Offset(left - 2.dp.toPx(), top + 5.dp.toPx()),
+        size = Size(maxW + 4.dp.toPx(), maxH - 1.dp.toPx()),
+        cornerRadius = CornerRadius(radius + 2.dp.toPx(), radius + 2.dp.toPx())
     )
 
-    // Main glossy body.
+    // Main body.
     drawRoundRect(
         brush = Brush.linearGradient(
-            listOf(
-                color.copy(alpha = fade),
-                color.copy(alpha = 0.82f * fade),
-                Color(0xFF26313C).copy(alpha = fade)
+            colors = listOf(
+                style.body.copy(alpha = fade),
+                style.body.copy(alpha = 0.86f * fade),
+                darken(style.body, 0.42f).copy(alpha = fade)
             ),
             start = Offset(left, top),
-            end = Offset(left + bodyW, top + bodyH)
+            end = Offset(left + maxW, top + maxH)
         ),
         topLeft = Offset(left, top),
-        size = Size(bodyW, bodyH),
-        cornerRadius = CornerRadius(r, r)
+        size = Size(maxW, maxH),
+        cornerRadius = CornerRadius(radius, radius)
     )
 
-    // Hood and roof create the readable 3D toy-car silhouette.
-    val hoodH = bodyH * 0.18f
+    when (style.type) {
+        VehicleType.HATCHBACK -> drawHatchback(center, maxW, maxH, style)
+        VehicleType.SEDAN -> drawSedan(center, maxW, maxH, style)
+        VehicleType.SUV -> drawSuv(center, maxW, maxH, style)
+        VehicleType.TAXI -> drawTaxi(center, maxW, maxH, style)
+        VehicleType.PICKUP -> drawPickup(center, maxW, maxH, style)
+        VehicleType.BUS -> drawBus(center, maxW, maxH, style)
+    }
+
+    // Wheels are always visible, making the silhouette read as a vehicle rather
+    // than a coloured block.
+    val wheelR = maxW * 0.095f
+    val wheelX = maxW * 0.10f
+    val wheelYs = listOf(top + maxH * 0.23f, top + maxH * 0.77f)
+    for (wy in wheelYs) {
+        drawWheel(Offset(left + wheelX, wy), wheelR)
+        drawWheel(Offset(left + maxW - wheelX, wy), wheelR)
+    }
+
+    // Headlights, tail lamps and bumpers.
     drawRoundRect(
-        color = Color.White.copy(alpha = 0.11f * fade),
-        topLeft = Offset(left + bodyW * 0.13f, top + bodyH * 0.08f),
-        size = Size(bodyW * 0.74f, hoodH),
-        cornerRadius = CornerRadius(r * 0.6f, r * 0.6f)
+        color = Color(0xFFFFF2BF).copy(alpha = 0.98f),
+        topLeft = Offset(left + maxW * 0.17f, top + maxH * 0.045f),
+        size = Size(maxW * 0.20f, maxH * 0.045f),
+        cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
     )
-
-    val roofTop = top + bodyH * 0.27f
-    val roofH = bodyH * 0.38f
-    val roofW = bodyW * if (bus) 0.82f else 0.70f
     drawRoundRect(
-        color = Color(0xFF0C1822).copy(alpha = 0.98f),
-        topLeft = Offset(center.x - roofW / 2f, roofTop),
-        size = Size(roofW, roofH),
-        cornerRadius = CornerRadius(r * 0.75f, r * 0.75f)
+        color = Color(0xFFFFF2BF).copy(alpha = 0.98f),
+        topLeft = Offset(left + maxW * 0.63f, top + maxH * 0.045f),
+        size = Size(maxW * 0.20f, maxH * 0.045f),
+        cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+    )
+    drawRoundRect(
+        color = Color(0xFFD7223B).copy(alpha = 0.95f),
+        topLeft = Offset(left + maxW * 0.18f, top + maxH * 0.91f),
+        size = Size(maxW * 0.64f, maxH * 0.038f),
+        cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+    )
+    drawRoundRect(
+        color = Color.White.copy(alpha = 0.72f),
+        topLeft = Offset(center.x - maxW * 0.16f, top + maxH * 0.87f),
+        size = Size(maxW * 0.32f, maxH * 0.035f),
+        cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
     )
 
-    // Windows: bright enough to read as a real vehicle at phone scale.
-    if (bus) {
-        for (i in 0..2) {
-            val wx = center.x - roofW * 0.38f + i * roofW * 0.29f
-            drawRoundRect(
-                color = Color(0xFFB9F5FF).copy(alpha = 0.72f),
-                topLeft = Offset(wx, roofTop + roofH * 0.16f),
-                size = Size(roofW * 0.21f, roofH * 0.57f),
-                cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
-            )
-        }
-    } else {
+    // Highlight sweep.
+    drawLine(
+        color = Color.White.copy(alpha = 0.18f * pulse),
+        start = Offset(left + maxW * 0.12f, top + maxH * 0.12f),
+        end = Offset(left + maxW * 0.78f, top + maxH * 0.12f),
+        strokeWidth = 2.dp.toPx(),
+        cap = StrokeCap.Round
+    )
+}
+
+private fun DrawScope.drawHatchback(center: Offset, w: Float, h: Float, s: VehicleStyle) {
+    drawCabin(center, w * 0.72f, h * 0.39f, h * 0.02f, s.roof)
+    drawRoundRect(
+        color = Color.White.copy(alpha = 0.11f),
+        topLeft = Offset(center.x - w * 0.34f, center.y - h * 0.25f),
+        size = Size(w * 0.68f, h * 0.06f),
+        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+    )
+}
+
+private fun DrawScope.drawSedan(center: Offset, w: Float, h: Float, s: VehicleStyle) {
+    drawCabin(center, w * 0.70f, h * 0.38f, h * 0.01f, s.roof)
+    drawRoundRect(
+        color = Color.White.copy(alpha = 0.10f),
+        topLeft = Offset(center.x - w * 0.31f, center.y - h * 0.31f),
+        size = Size(w * 0.62f, h * 0.10f),
+        cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+    )
+    drawRoundRect(
+        color = Color.Black.copy(alpha = 0.16f),
+        topLeft = Offset(center.x - w * 0.31f, center.y + h * 0.21f),
+        size = Size(w * 0.62f, h * 0.08f),
+        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+    )
+}
+
+private fun DrawScope.drawSuv(center: Offset, w: Float, h: Float, s: VehicleStyle) {
+    drawRoundRect(
+        color = Color(0xFF0C141B).copy(alpha = 0.30f),
+        topLeft = Offset(center.x - w * 0.39f, center.y - h * 0.24f),
+        size = Size(w * 0.78f, h * 0.50f),
+        cornerRadius = CornerRadius(w * 0.09f, w * 0.09f)
+    )
+    drawCabin(center, w * 0.76f, h * 0.42f, h * 0.005f, s.roof)
+    drawLine(
+        color = Color.White.copy(alpha = 0.16f),
+        start = Offset(center.x - w * 0.30f, center.y + h * 0.27f),
+        end = Offset(center.x + w * 0.30f, center.y + h * 0.27f),
+        strokeWidth = 2.dp.toPx()
+    )
+}
+
+private fun DrawScope.drawTaxi(center: Offset, w: Float, h: Float, s: VehicleStyle) {
+    drawCabin(center, w * 0.71f, h * 0.40f, h * 0.01f, s.roof)
+    drawRoundRect(
+        color = Color(0xFFF8F2D2),
+        topLeft = Offset(center.x - w * 0.12f, center.y - h * 0.40f),
+        size = Size(w * 0.24f, h * 0.09f),
+        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+    )
+    drawLine(
+        color = Color(0xFF111820).copy(alpha = 0.70f),
+        start = Offset(center.x - w * 0.31f, center.y),
+        end = Offset(center.x + w * 0.31f, center.y),
+        strokeWidth = max(1.dp.toPx(), h * 0.028f)
+    )
+}
+
+private fun DrawScope.drawPickup(center: Offset, w: Float, h: Float, s: VehicleStyle) {
+    val cabinTop = center.y - h * 0.31f
+    drawCabin(
+        center = Offset(center.x, center.y - h * 0.08f),
+        width = w * 0.74f,
+        height = h * 0.34f,
+        yBias = 0f,
+        roof = s.roof
+    )
+    drawRoundRect(
+        color = Color(0xFF17212A).copy(alpha = 0.82f),
+        topLeft = Offset(center.x - w * 0.35f, center.y + h * 0.18f),
+        size = Size(w * 0.70f, h * 0.25f),
+        cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx())
+    )
+    drawLine(
+        color = Color.White.copy(alpha = 0.14f),
+        start = Offset(center.x - w * 0.28f, center.y + h * 0.20f),
+        end = Offset(center.x + w * 0.28f, center.y + h * 0.20f),
+        strokeWidth = 2.dp.toPx()
+    )
+}
+
+private fun DrawScope.drawBus(center: Offset, w: Float, h: Float, s: VehicleStyle) {
+    drawRoundRect(
+        color = Color(0xFF0B141B).copy(alpha = 0.22f),
+        topLeft = Offset(center.x - w * 0.44f, center.y - h * 0.47f),
+        size = Size(w * 0.88f, h * 0.94f),
+        cornerRadius = CornerRadius(w * 0.08f, w * 0.08f)
+    )
+    val windowW = w * 0.17f
+    for (i in 0 until 4) {
         drawRoundRect(
-            color = Color(0xFFB9F5FF).copy(alpha = 0.78f),
-            topLeft = Offset(center.x - roofW * 0.36f, roofTop + roofH * 0.14f),
-            size = Size(roofW * 0.72f, roofH * 0.60f),
-            cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
-        )
-        drawLine(
-            color = Color.White.copy(alpha = 0.38f),
-            start = Offset(center.x, roofTop + roofH * 0.15f),
-            end = Offset(center.x, roofTop + roofH * 0.73f),
-            strokeWidth = 1.2.dp.toPx()
+            color = Color(0xFFBFEAF2).copy(alpha = 0.82f),
+            topLeft = Offset(
+                center.x - w * 0.35f + i * w * 0.23f,
+                center.y - h * 0.28f
+            ),
+            size = Size(windowW, h * 0.23f),
+            cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
         )
     }
-
-    // Side mirrors.
-    drawCircle(color.copy(alpha = 0.95f), bodyW * 0.055f, Offset(left - bodyW * 0.01f, center.y - bodyH * 0.12f))
-    drawCircle(color.copy(alpha = 0.95f), bodyW * 0.055f, Offset(left + bodyW * 1.01f, center.y - bodyH * 0.12f))
-
-    // Wheels with rims.
-    val wheelR = bodyW * 0.105f
-    for (wy in listOf(top + bodyH * 0.22f, top + bodyH * 0.78f)) {
-        drawCircle(Color(0xFF080B0F), wheelR, Offset(left + bodyW * 0.07f, wy))
-        drawCircle(Color(0xFFB7C0C8), wheelR * 0.45f, Offset(left + bodyW * 0.07f, wy))
-        drawCircle(Color(0xFF080B0F), wheelR, Offset(left + bodyW * 0.93f, wy))
-        drawCircle(Color(0xFFB7C0C8), wheelR * 0.45f, Offset(left + bodyW * 0.93f, wy))
-    }
-
-    // Front bumper, lights and rear light strip.
-    drawRoundRect(
-        color = Color.White.copy(alpha = 0.92f),
-        topLeft = Offset(left + bodyW * 0.16f, top + bodyH * 0.045f),
-        size = Size(bodyW * 0.24f, bodyH * 0.065f),
-        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
-    )
-    drawRoundRect(
-        color = Color.White.copy(alpha = 0.92f),
-        topLeft = Offset(left + bodyW * 0.60f, top + bodyH * 0.045f),
-        size = Size(bodyW * 0.24f, bodyH * 0.065f),
-        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
-    )
-    drawRoundRect(
-        color = Color(0xFFFF324A).copy(alpha = 0.85f),
-        topLeft = Offset(left + bodyW * 0.22f, top + bodyH * 0.89f),
-        size = Size(bodyW * 0.56f, bodyH * 0.045f),
-        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
-    )
-
-    // Subtle animated energy under the legal vehicle.
-    if (pulse > 0.8f) {
-        drawCircle(
-            color = Color.White.copy(alpha = 0.12f * pulse),
-            radius = bodyW * 0.12f,
-            center = Offset(center.x, top + bodyH * 0.12f)
-        )
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawExitTrail(
-    center: Offset,
-    direction: com.vector.escape.model.Direction,
-    length: Float,
-    alpha: Float
-) {
-    val dx = direction.dc.toFloat()
-    val dy = direction.dr.toFloat()
-    val start = Offset(center.x - dx * length * 0.45f, center.y - dy * length * 0.45f)
-    val end = Offset(center.x - dx * length, center.y - dy * length)
     drawLine(
-        brush = Brush.linearGradient(
-            listOf(Color(0xFF6CF6FF).copy(alpha = alpha), Color.Transparent)
-        ),
-        start = start,
-        end = end,
-        strokeWidth = 6.dp.toPx(),
-        cap = StrokeCap.Round
-    )
-    drawLine(
-        color = Color.White.copy(alpha = alpha * 0.55f),
-        start = start,
-        end = end,
-        strokeWidth = 1.5.dp.toPx(),
-        cap = StrokeCap.Round
+        color = Color(0xFF17232B).copy(alpha = 0.85f),
+        start = Offset(center.x - w * 0.35f, center.y + h * 0.17f),
+        end = Offset(center.x + w * 0.35f, center.y + h * 0.17f),
+        strokeWidth = 2.dp.toPx()
     )
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawParkingBlock(
+private fun DrawScope.drawCabin(
     center: Offset,
     width: Float,
-    height: Float
+    height: Float,
+    yBias: Float,
+    roof: Color
 ) {
     val left = center.x - width / 2f
-    val top = center.y - height / 2f
+    val top = center.y - height / 2f + yBias
     drawRoundRect(
-        color = Color.Black.copy(alpha = 0.35f),
-        topLeft = Offset(left + 3.dp.toPx(), top + 4.dp.toPx()),
-        size = Size(width, height),
-        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
-    )
-    drawRoundRect(
-        brush = Brush.horizontalGradient(listOf(Color(0xFFFFD33D), Color(0xFFEB8E1A))),
+        color = Color(0xFF0A1219).copy(alpha = 0.96f),
         topLeft = Offset(left, top),
         size = Size(width, height),
-        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+        cornerRadius = CornerRadius(min(width, height) * 0.16f, min(width, height) * 0.16f)
     )
-    for (i in 0..5) {
-        drawLine(
-            color = Color(0xFF252A30),
-            start = Offset(left + i * width / 5f, top),
-            end = Offset(left + i * width / 5f + height, top + height),
-            strokeWidth = maxOf(1.dp.toPx(), height * 0.18f)
-        )
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCone(center: Offset, radius: Float) {
-    val cone = Path().apply {
-        moveTo(center.x, center.y - radius * 1.7f)
-        lineTo(center.x - radius, center.y + radius)
-        lineTo(center.x + radius, center.y + radius)
-        close()
-    }
-    drawPath(cone, Brush.verticalGradient(listOf(Color(0xFFFFD43B), Color(0xFFF06A1A))))
-    drawLine(
-        color = Color.White.copy(alpha = 0.9f),
-        start = Offset(center.x - radius * 0.52f, center.y),
-        end = Offset(center.x + radius * 0.52f, center.y),
-        strokeWidth = radius * 0.22f
-    )
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBollard(center: Offset, radius: Float) {
-    drawCircle(Color.Black.copy(alpha = 0.38f), radius * 1.15f, Offset(center.x + 2.dp.toPx(), center.y + 3.dp.toPx()))
     drawRoundRect(
-        color = Color(0xFFE9EEF4),
-        topLeft = Offset(center.x - radius * 0.55f, center.y - radius),
-        size = Size(radius * 1.1f, radius * 2f),
-        cornerRadius = CornerRadius(radius * 0.25f, radius * 0.25f)
+        brush = Brush.verticalGradient(
+            colors = listOf(Color(0xFFD7F6FA).copy(alpha = 0.88f), Color(0xFF6D9BA6).copy(alpha = 0.80f))
+        ),
+        topLeft = Offset(left + width * 0.09f, top + height * 0.13f),
+        size = Size(width * 0.82f, height * 0.74f),
+        cornerRadius = CornerRadius(min(width, height) * 0.12f, min(width, height) * 0.12f)
     )
-    drawCircle(Color(0xFFFFC43A), radius * 0.22f, Offset(center.x, center.y - radius * 0.45f))
+    drawLine(
+        color = Color.White.copy(alpha = 0.35f),
+        start = Offset(center.x, top + height * 0.12f),
+        end = Offset(center.x, top + height * 0.86f),
+        strokeWidth = 1.4.dp.toPx()
+    )
+    drawLine(
+        color = roof.copy(alpha = 0.70f),
+        start = Offset(left + width * 0.08f, top + height * 0.90f),
+        end = Offset(left + width * 0.92f, top + height * 0.90f),
+        strokeWidth = 1.8.dp.toPx()
+    )
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawExitGate(
+private fun DrawScope.drawWheel(center: Offset, radius: Float) {
+    drawCircle(Color(0xFF07090C), radius, center)
+    drawCircle(Color(0xFF59636C), radius * 0.57f, center)
+    drawCircle(Color(0xFF0E141A), radius * 0.35f, center)
+    drawCircle(Color(0xFFC8D0D6), radius * 0.14f, center)
+}
+
+private fun DrawScope.drawEscapeLane(
     center: Offset,
-    horizontal: Boolean
+    direction: Direction,
+    boardWidth: Float,
+    boardHeight: Float,
+    color: Color,
+    strokeWidth: Float
 ) {
-    val length = 44.dp.toPx()
-    val width = 6.dp.toPx()
-    if (horizontal) {
-        drawRoundRect(
-            brush = Brush.horizontalGradient(listOf(Color(0xFF1B2229), Color(0xFFF4C33A), Color(0xFF1B2229))),
-            topLeft = Offset(center.x - length / 2f, center.y - width / 2f),
-            size = Size(length, width),
-            cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
-        )
-    } else {
-        drawRoundRect(
-            brush = Brush.verticalGradient(listOf(Color(0xFF1B2229), Color(0xFFF4C33A), Color(0xFF1B2229))),
-            topLeft = Offset(center.x - width / 2f, center.y - length / 2f),
-            size = Size(width, length),
-            cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx())
-        )
+    val end = when (direction) {
+        Direction.LEFT -> Offset(6.dp.toPx(), center.y)
+        Direction.RIGHT -> Offset(boardWidth - 6.dp.toPx(), center.y)
+        Direction.UP -> Offset(center.x, 6.dp.toPx())
+        Direction.DOWN -> Offset(center.x, boardHeight - 6.dp.toPx())
+    }
+    drawLine(
+        color = color,
+        start = center,
+        end = end,
+        strokeWidth = strokeWidth,
+        cap = StrokeCap.Round
+    )
+    drawLine(
+        color = color.copy(alpha = color.alpha * 0.45f),
+        start = center,
+        end = end,
+        strokeWidth = strokeWidth * 4.5f,
+        cap = StrokeCap.Round
+    )
+}
+
+private fun DrawScope.drawExitTrail(
+    center: Offset,
+    direction: Direction,
+    progress: Float,
+    cellW: Float,
+    cellH: Float
+) {
+    val len = min(cellW, cellH) * (0.8f + progress * 2.4f)
+    val dx = direction.dc.toFloat()
+    val dy = direction.dr.toFloat()
+    drawLine(
+        brush = Brush.linearGradient(
+            colors = listOf(Color(0xFFB7FBFF).copy(alpha = 0.85f), Color.Transparent)
+        ),
+        start = center - Offset(dx, dy) * (len * 0.15f),
+        end = center - Offset(dx, dy) * len,
+        strokeWidth = 10.dp.toPx(),
+        cap = StrokeCap.Round
+    )
+    drawLine(
+        color = Color.White.copy(alpha = 0.65f),
+        start = center - Offset(dx, dy) * (len * 0.10f),
+        end = center - Offset(dx, dy) * len,
+        strokeWidth = 2.dp.toPx(),
+        cap = StrokeCap.Round
+    )
+}
+
+private fun DrawScope.drawCurb(topLeft: Offset, road: Size) {
+    val inset = 4.dp.toPx()
+    drawRoundRect(
+        color = Color(0xFFF0C02E),
+        topLeft = Offset(topLeft.x + inset, topLeft.y + inset),
+        size = Size(road.width - inset * 2f, road.height - inset * 2f),
+        cornerRadius = CornerRadius(23.dp.toPx(), 23.dp.toPx()),
+        style = Stroke(4.dp.toPx())
+    )
+    // Four short black segments break the yellow curb like a real roadside barrier.
+    val black = Color(0xFF20262B)
+    val seg = 28.dp.toPx()
+    drawLine(black, Offset(18.dp.toPx(), 7.dp.toPx()), Offset(18.dp.toPx() + seg, 7.dp.toPx()), 4.dp.toPx())
+    drawLine(black, Offset(18.dp.toPx(), size.height - 7.dp.toPx()), Offset(18.dp.toPx() + seg, size.height - 7.dp.toPx()), 4.dp.toPx())
+    drawLine(black, Offset(7.dp.toPx(), 18.dp.toPx()), Offset(7.dp.toPx(), 18.dp.toPx() + seg), 4.dp.toPx())
+    drawLine(black, Offset(size.width - 7.dp.toPx(), 18.dp.toPx()), Offset(size.width - 7.dp.toPx(), 18.dp.toPx() + seg), 4.dp.toPx())
+}
+
+private fun DrawScope.drawDashedLine(
+    color: Color,
+    start: Offset,
+    end: Offset,
+    dash: Float,
+    gap: Float,
+    strokeWidth: Float
+) {
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+    if (distance <= 0f) return
+    val ux = dx / distance
+    val uy = dy / distance
+    var travelled = 0f
+    while (travelled < distance) {
+        val a = Offset(start.x + ux * travelled, start.y + uy * travelled)
+        val bDist = min(travelled + dash, distance)
+        val b = Offset(start.x + ux * bDist, start.y + uy * bDist)
+        drawLine(color, a, b, strokeWidth)
+        travelled += dash + gap
     }
 }
+
+private fun darken(color: Color, amount: Float): Color =
+    Color(
+        red = color.red * (1f - amount),
+        green = color.green * (1f - amount),
+        blue = color.blue * (1f - amount),
+        alpha = color.alpha
+    )
+
+private fun Offset.times(scale: Float): Offset = Offset(x * scale, y * scale)
