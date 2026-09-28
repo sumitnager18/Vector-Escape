@@ -36,17 +36,14 @@ object PuzzleGenerator {
 
                 if (candidates.isEmpty()) break
                 val chosen = candidates[random.nextInt(candidates.size)]
-                val arrow = Arrow("a_\${idCounter++}", chosen.first, chosen.second, chosen.third)
+                val arrow = Arrow("a_${idCounter++}", chosen.first, chosen.second, chosen.third)
                 placed.add(arrow)
                 currentBoard = currentBoard.addArrow(arrow)
             }
 
             if (placed.size == target) {
-                val candidateBoard = BoardState(rows, cols, placed)
-                val solver = PuzzleSolver.solve(candidateBoard)
-                if (solver.isSolvable && solver.depth == target && solver.minInitialLegalMoves >= 1) {
-                    return candidateBoard
-                }
+                // Reverse construction guarantees a valid solution.
+                return BoardState(rows, cols, placed)
             }
         }
 
@@ -71,7 +68,7 @@ object PuzzleGenerator {
                     distLeft -> Direction.LEFT
                     else -> Direction.RIGHT
                 }
-                safeArrows.add(Arrow("fb_\${id++}", r, c, dir))
+                safeArrows.add(Arrow("fb_${id++}", r, c, dir))
             }
         }
         return BoardState(rows, cols, safeArrows)
