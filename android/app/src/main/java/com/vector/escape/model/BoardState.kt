@@ -51,6 +51,6 @@ class BoardState(
     }
 
     fun toKey(): String {
-        return arrows.map { "\${it.row},\${it.col},\${it.direction}" }.sorted().joinToString("|")
+        return arrows.map { "${it.row},${it.col},${it.direction}" }.sorted().joinToString("|")
     }
 }
