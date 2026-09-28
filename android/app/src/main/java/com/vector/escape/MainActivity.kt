@@ -14,12 +14,14 @@ import com.vector.escape.model.Difficulty
 import com.vector.escape.model.LevelDefinition
 import com.vector.escape.storage.GamePreferences
 import com.vector.escape.ui.screens.GameScreen
+import com.vector.escape.ui.screens.LevelSelectScreen
 import com.vector.escape.ui.screens.MainMenuScreen
 import com.vector.escape.ui.theme.VectorBg
 import com.vector.escape.ui.theme.VectorEscapeTheme
 
 enum class Screen {
     MENU,
+    LEVEL_SELECT,
     GAME
 }
 
@@ -46,8 +48,7 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = Screen.GAME
                                 },
                                 onOpenLevelSelect = {
-                                    activeLevel = CampaignLevels.getLevel(prefs.currentCampaignLevel)
-                                    currentScreen = Screen.GAME
+                                    currentScreen = Screen.LEVEL_SELECT
                                 },
                                 onOpenDaily = {
                                     val dateStr = DailyVectorGenerator.getTodayDateString()
@@ -68,6 +69,17 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = Screen.GAME
                                 },
                                 onOpenSettings = {}
+                            )
+                        }
+                        Screen.LEVEL_SELECT -> {
+                            LevelSelectScreen(
+                                prefs = prefs,
+                                onSelectLevel = { levelNum ->
+                                    prefs.currentCampaignLevel = levelNum
+                                    activeLevel = CampaignLevels.getLevel(levelNum)
+                                    currentScreen = Screen.GAME
+                                },
+                                onBack = { currentScreen = Screen.MENU }
                             )
                         }
                         Screen.GAME -> {
