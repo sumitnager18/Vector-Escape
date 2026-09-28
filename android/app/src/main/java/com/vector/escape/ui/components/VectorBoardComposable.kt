@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -49,7 +50,10 @@ private data class VehicleStyle(
 fun VectorBoardComposable(
     board: BoardState,
     onArrowTapped: (Arrow) -> Unit,
+    onArrowSwiped: ((Arrow, Int) -> Unit)? = null,
     activeHintArrowId: String? = null,
+    impactArrowId: String? = null,
+    impactProgress: Float = 0f,
     exitingArrowId: String? = null,
     exitProgress: Float = 0f,
     interactionEnabled: Boolean = true,
@@ -81,6 +85,48 @@ fun VectorBoardComposable(
                     val row = (offset.y / cellH).toInt().coerceIn(0, board.rows - 1)
                     board.getArrowAt(row, col)?.let(onArrowTapped)
                 }
+            }
+            .pointerInput(board, interactionEnabled, onArrowSwiped) {
+                if (!interactionEnabled || onArrowSwiped == null) return@pointerInput
+                var selected: Arrow? = null
+                var totalDrag = Offset.Zero
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        val cellW = size.width / board.cols
+                        val cellH = size.height / board.rows
+                        val col = (offset.x / cellW).toInt().coerceIn(0, board.cols - 1)
+                        val row = (offset.y / cellH).toInt().coerceIn(0, board.rows - 1)
+                        selected = board.getArrowAt(row, col)
+                        totalDrag = Offset.Zero
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        totalDrag += amount
+                    },
+                    onDragCancel = {
+                        selected = null
+                        totalDrag = Offset.Zero
+                    },
+                    onDragEnd = {
+                        val arrow = selected
+                        val minDistance = min(size.width, size.height) * 0.04f
+                        if (arrow != null && totalDrag.getDistance() >= minDistance) {
+                            val drag = totalDrag / totalDrag.getDistance()
+                            val forward = when (arrow.direction) {
+                                Direction.UP -> Offset(0f, -1f)
+                                Direction.RIGHT -> Offset(1f, 0f)
+                                Direction.DOWN -> Offset(0f, 1f)
+                                Direction.LEFT -> Offset(-1f, 0f)
+                            }
+                            val alignment = drag.x * forward.x + drag.y * forward.y
+                            if (kotlin.math.abs(alignment) >= 0.707f) {
+                                onArrowSwiped(arrow, if (alignment >= 0f) 1 else -1)
+                            }
+                        }
+                        selected = null
+                        totalDrag = Offset.Zero
+                    }
+                )
             }
     ) {
         val cellW = size.width / board.cols
@@ -182,6 +228,7 @@ fun VectorBoardComposable(
             val legal = legalMoves.contains(arrow.id)
             val hint = arrow.id == activeHintArrowId
             val isExiting = arrow.id == exitingArrowId
+            val isImpacting = arrow.id == impactArrowId && !isExiting
             val style = vehicleStyle(arrow.id)
 
             val baseCenter = Offset(x + cellW / 2f, y + cellH / 2f)
@@ -193,6 +240,9 @@ fun VectorBoardComposable(
                     cellH = cellH,
                     progress = exitProgress
                 )
+            } else if (isImpacting) {
+                val lunge = 0.13f * kotlin.math.sin(impactProgress * kotlin.math.PI).toFloat()
+                baseCenter + Offset(arrow.direction.dc * cellW * lunge, arrow.direction.dr * cellH * lunge)
             } else {
                 baseCenter
             }
@@ -230,7 +280,8 @@ fun VectorBoardComposable(
                     cellH = cellH,
                     style = style,
                     pulse = if (legal || hint) pulse else 1f,
-                    exitProgress = if (isExiting) exitProgress else 0f
+                    exitProgress = if (isExiting) exitProgress else 0f,
+                    impactProgress = if (isImpacting) impactProgress else 0f
                 )
             }
 
@@ -288,38 +339,14 @@ private fun exitOffset(
 
 private fun vehicleStyle(id: String): VehicleStyle {
     val h = id.hashCode().ushr(1)
-    val body = when (h % 8) {
-        0 -> Color(0xFF18BFEA)
-        1 -> Color(0xFFE83E55)
-        2 -> Color(0xFFFFB52B)
-        3 -> Color(0xFF7C4DFF)
-        4 -> Color(0xFF2CCB62)
-        5 -> Color(0xFFFF6B8A)
-        6 -> Color(0xFF36A6FF)
-        else -> Color(0xFFF3F4F6)
+    return when (h % 6) {
+        0 -> VehicleStyle(VehicleType.BUS, 0.78f, 0.96f, Color(0xFFFFD200), Color(0xFF17303A))
+        1 -> VehicleStyle(VehicleType.SEDAN, 0.58f, 0.78f, Color(0xFF00A3FF), Color(0xFF101820))
+        2 -> VehicleStyle(VehicleType.SUV, 0.68f, 0.84f, Color(0xFF2DFE54), Color(0xFF101820))
+        3 -> VehicleStyle(VehicleType.TAXI, 0.58f, 0.77f, Color(0xFFFF7A00), Color(0xFF111820))
+        4 -> VehicleStyle(VehicleType.HATCHBACK, 0.53f, 0.68f, Color(0xFFFF2222), Color(0xFF101820))
+        else -> VehicleStyle(VehicleType.PICKUP, 0.64f, 0.86f, Color(0xFFFF1988), Color(0xFF101820))
     }
-    val type = when (h % 6) {
-        0 -> VehicleType.HATCHBACK
-        1 -> VehicleType.SEDAN
-        2 -> VehicleType.SUV
-        3 -> VehicleType.TAXI
-        4 -> VehicleType.PICKUP
-        else -> VehicleType.BUS
-    }
-    val (w, l) = when (type) {
-        VehicleType.HATCHBACK -> 0.54f to 0.70f
-        VehicleType.SEDAN -> 0.58f to 0.78f
-        VehicleType.SUV -> 0.64f to 0.83f
-        VehicleType.TAXI -> 0.57f to 0.77f
-        VehicleType.PICKUP -> 0.63f to 0.84f
-        VehicleType.BUS -> 0.70f to 0.92f
-    }
-    val roof = when (type) {
-        VehicleType.TAXI -> Color(0xFF111820)
-        VehicleType.BUS -> Color(0xFF17303A)
-        else -> Color(0xFF101820)
-    }
-    return VehicleStyle(type, w, l, body, roof)
 }
 
 private fun DrawScope.drawRealVehicle(
@@ -328,7 +355,8 @@ private fun DrawScope.drawRealVehicle(
     cellH: Float,
     style: VehicleStyle,
     pulse: Float,
-    exitProgress: Float
+    exitProgress: Float,
+    impactProgress: Float
 ) {
     val maxW = cellW * style.width
     val maxH = cellH * style.length
@@ -336,7 +364,11 @@ private fun DrawScope.drawRealVehicle(
     val top = center.y - maxH / 2f
     val radius = min(maxW, maxH) * 0.13f
     val fade = 1f - exitProgress * 0.16f
+    val squash = kotlin.math.sin(impactProgress * kotlin.math.PI).toFloat()
+    val visualScaleX = 1f + squash * 0.10f
+    val visualScaleY = 1f - squash * 0.08f
 
+    scale(scaleX = visualScaleX, scaleY = visualScaleY, pivot = center) {
     // Soft contact shadow.
     drawRoundRect(
         color = Color.Black.copy(alpha = 0.48f * fade),
@@ -422,6 +454,7 @@ private fun DrawScope.drawRealVehicle(
         strokeWidth = 2.dp.toPx(),
         cap = StrokeCap.Round
     )
+    }
 }
 
 private fun DrawScope.drawHatchback(center: Offset, w: Float, h: Float, s: VehicleStyle) {
