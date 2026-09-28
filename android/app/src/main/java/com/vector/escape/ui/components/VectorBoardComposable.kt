@@ -10,6 +10,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.vector.escape.engine.MoveValidator
@@ -173,7 +174,7 @@ fun VectorBoardComposable(
                             )
                         }
 
-                        rotate(degrees = angle, pivot = center) {
+                        withTransform({ rotate(degrees = angle, pivot = center) }) {
                             // Ground shadow.
                             drawRoundRect(
                                 color = Color.Black.copy(alpha = 0.50f),
