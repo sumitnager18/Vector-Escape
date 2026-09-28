@@ -53,9 +53,11 @@ fun GameScreen(
     var undoStack by remember(levelDef) { mutableStateOf(listOf<UndoStep>()) }
     var activeHintId by remember(levelDef) { mutableStateOf<String?>(null) }
     var movingArrow by remember(levelDef) { mutableStateOf<Arrow?>(null) }
+    var impactArrowId by remember(levelDef) { mutableStateOf<String?>(null) }
     var isCleared by remember(levelDef) { mutableStateOf(false) }
     var isFailed by remember(levelDef) { mutableStateOf(false) }
     val exitProgress = remember { Animatable(0f) }
+    val impactProgress = remember { Animatable(0f) }
 
     fun resetBoard() {
         board = BoardState(levelDef.rows, levelDef.cols, levelDef.arrows)
@@ -66,6 +68,7 @@ fun GameScreen(
         undoStack = emptyList()
         activeHintId = null
         movingArrow = null
+        impactArrowId = null
         isCleared = false
         isFailed = false
     }
@@ -92,10 +95,18 @@ fun GameScreen(
         }
     }
 
-    fun handleArrowTap(arrow: Arrow) {
-        if (isCleared || isFailed || movingArrow != null) return
+    LaunchedEffect(impactArrowId) {
+        if (impactArrowId == null) return@LaunchedEffect
+        impactProgress.snapTo(0f)
+        impactProgress.animateTo(1f, tween(100, easing = FastOutSlowInEasing))
+        impactProgress.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+        impactArrowId = null
+    }
 
-        if (MoveValidator.isMoveLegal(board, arrow)) {
+    fun handleArrowAction(arrow: Arrow, directionSign: Int = 1) {
+        if (isCleared || isFailed || movingArrow != null || impactArrowId != null) return
+
+        if (directionSign > 0 && MoveValidator.isMoveLegal(board, arrow)) {
             SoundManager.playLaunch(flow)
             HapticManager.tap(context)
             activeHintId = null
@@ -110,9 +121,12 @@ fun GameScreen(
             mistakes += 1
             flow = 1
             hearts -= 1
+            impactArrowId = arrow.id
             if (hearts <= 0) isFailed = true
         }
     }
+
+    fun handleArrowTap(arrow: Arrow) = handleArrowAction(arrow, 1)
 
     Column(
         modifier = Modifier
@@ -134,7 +148,7 @@ fun GameScreen(
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "SECTOR \${levelDef.levelNumber}",
+                    text = "SECTOR ${levelDef.levelNumber}",
                     fontWeight = FontWeight.Bold,
                     color = VectorTextPrimary,
                     fontSize = 22.sp
@@ -168,7 +182,7 @@ fun GameScreen(
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("LEFT \${board.remainingCount}", fontSize = 12.sp, color = VectorCyan)
+            Text("LEFT ${board.remainingCount}", fontSize = 12.sp, color = VectorCyan)
             Text("MOVES $moves", fontSize = 12.sp, color = VectorTextSecondary)
             Text("FLOW x$flow", fontSize = 12.sp, color = VectorViolet)
         }
@@ -178,10 +192,13 @@ fun GameScreen(
         VectorBoardComposable(
             board = board,
             onArrowTapped = ::handleArrowTap,
+            onArrowSwiped = { arrow, sign -> handleArrowAction(arrow, sign) },
             activeHintArrowId = activeHintId,
+            impactArrowId = impactArrowId,
+            impactProgress = impactProgress.value,
             exitingArrowId = movingArrow?.id,
             exitProgress = exitProgress.value,
-            interactionEnabled = movingArrow == null,
+            interactionEnabled = movingArrow == null && impactArrowId == null,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
@@ -244,7 +261,7 @@ fun GameScreen(
     if (isCleared) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("SECTOR \${levelDef.levelNumber} CLEARED") },
+            title = { Text("SECTOR ${levelDef.levelNumber} CLEARED") },
             text = { Text("Cleared in $moves moves with $mistakes mistakes.") },
             confirmButton = {
                 Button(onClick = onNextLevel) {
@@ -258,7 +275,7 @@ fun GameScreen(
     if (isFailed) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("SECTOR \${levelDef.levelNumber} FAILED") },
+            title = { Text("SECTOR ${levelDef.levelNumber} FAILED") },
             text = { Text("All three hearts were used. Try the route again.") },
             confirmButton = { Button(onClick = ::resetBoard) { Text("TRY AGAIN") } },
             dismissButton = { TextButton(onClick = onBack) { Text("LEVEL SELECT") } }
